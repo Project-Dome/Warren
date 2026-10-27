@@ -28,10 +28,36 @@ define([
         });
     }
 
-    // Docs/TECH-SPEC.md, seção 1.1 "Identificação do(s) PO(s) de origem": lê todas as
-    // linhas do sublist nativo purchaseorders (uma Vendor Bill pode ter mais de uma PO).
-    // createdfrom é fallback defensivo, usado apenas quando o sublist está vazio.
+    // Docs/TECH-SPEC.md, seção 1.1 "Identificação do(s) PO(s) de origem".
+    // Correção de bug de implementação (ver aviso no final do arquivo): em afterSubmit
+    // CREATE o sublist nativo purchaseorders não está disponível (getLineCount retorna
+    // -1), então a fonte principal passou a ser o campo orderdoc de cada linha do
+    // sublist item — populado no "Bill Multiple Purchase Orders". purchaseorders e
+    // createdfrom seguem como fallback para outros fluxos de criação de Vendor Bill.
     function resolveSourcePurchaseOrderIds(vendorBill) {
+        const idsFromOrderDoc = resolveFromOrderDocLines(vendorBill);
+        if (!isNullOrEmpty(idsFromOrderDoc)) return idsFromOrderDoc;
+
+        const idsFromSublist = resolveFromPurchaseOrdersSublist(vendorBill);
+        if (!isNullOrEmpty(idsFromSublist)) return idsFromSublist;
+
+        const createdFromId = vendorBill.getValue({ fieldId: 'createdfrom' });
+        return isNullOrEmpty(createdFromId) ? [] : [createdFromId];
+    }
+
+    function resolveFromOrderDocLines(vendorBill) {
+        const itemLineCount = safeGetLineCount(vendorBill, 'item');
+        const ids = [];
+
+        for (let line = 0; line < itemLineCount; line++) {
+            const orderDocId = vendorBill.getSublistValue({ sublistId: 'item', fieldId: 'orderdoc', line: line });
+            if (!isNullOrEmpty(orderDocId) && ids.indexOf(orderDocId) === -1) ids.push(orderDocId);
+        }
+
+        return ids;
+    }
+
+    function resolveFromPurchaseOrdersSublist(vendorBill) {
         const poLineCount = safeGetLineCount(vendorBill, 'purchaseorders');
         const ids = [];
 
@@ -40,10 +66,7 @@ define([
             if (!isNullOrEmpty(id)) ids.push(id);
         }
 
-        if (!isNullOrEmpty(ids)) return ids;
-
-        const createdFromId = vendorBill.getValue({ fieldId: 'createdfrom' });
-        return isNullOrEmpty(createdFromId) ? [] : [createdFromId];
+        return ids;
     }
 
     function safeGetLineCount(record, sublistId) {

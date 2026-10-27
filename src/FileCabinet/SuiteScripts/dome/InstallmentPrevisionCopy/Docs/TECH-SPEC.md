@@ -24,26 +24,32 @@ independente por fatura, sem alterar os registros originais vinculados ao PO.
 **Contexto de execução:** roda apenas em `context.type === CREATE`. Ignorado em qualquer
 outro evento (`EDIT`, `DELETE`, etc.).
 
-**Identificação do(s) PO(s) de origem:** lida a partir do sublist nativo `purchaseorders` da
-Vendor Bill recém-criada — **todas** as linhas (campo `id` de cada linha), não apenas a
-primeira. Uma Vendor Bill pode ter mais de uma PO relacionada; cada PO identificada é
-processada individualmente, sempre levando em consideração o que consta em cada PO (suas
-próprias previsões). O campo nativo `createdfrom` é usado apenas como fallback defensivo,
-caso o sublist `purchaseorders` esteja vazio — e somente quando `createdfrom` apontar para
-uma transação do tipo Purchase Order (evita usar por engano a transação de origem quando
-esta não é uma PO, ver nota sobre Recebimento de Item abaixo). Se nenhuma das duas fontes
-apontar para uma ou mais Purchase Orders, o script **não faz nada** (fatura sem PO de
-origem, fora de escopo desta regra).
+**Identificação do(s) PO(s) de origem:** fonte primária é o campo nativo `orderdoc` de cada
+linha do sublist `item` da Vendor Bill recém-criada — populado pelo NetSuite no fluxo "Bill
+Multiple Purchase Orders", aponta para a PO de origem daquela linha especificamente. Lê-se
+**todas** as linhas do sublist `item`, coletando os ids de PO distintos (uma Vendor Bill
+pode ter linhas de mais de uma PO); cada PO identificada é processada individualmente,
+sempre levando em consideração o que consta em cada PO (suas próprias previsões).
+
+Como fallback, caso nenhuma linha tenha `orderdoc` preenchido, o script tenta o sublist
+nativo `purchaseorders` (campo `id` de cada linha). Validado em sandbox que esse sublist
+**não está disponível em `afterSubmit` no contexto CREATE** (`getLineCount` retorna `-1`),
+portanto hoje essa via nunca encontra PO nesse evento — mantido por segurança/compatibilidade
+caso o comportamento do NetSuite mude ou o script passe a rodar em outro contexto. Como
+último fallback, usa o campo nativo `createdfrom`, somente quando essa transação for do tipo
+Purchase Order (evita usar por engano a transação de origem quando esta não é uma PO, ver
+nota sobre Recebimento de Item abaixo). Se nenhuma das três fontes apontar para uma ou mais
+Purchase Orders, o script **não faz nada** (fatura sem PO de origem, fora de escopo desta
+regra).
 
 **Nota sobre Recebimento de Item:** hoje, no fluxo do Warren, a Vendor Bill não é criada a
 partir de um Recebimento de Item (Item Receipt) — é sempre criada diretamente a partir da
-PO. Esse cenário pode passar a ocorrer no futuro. Quando isso acontecer, o sublist nativo
-`purchaseorders` da Vendor Bill continua populado com a(s) PO(s) de origem (preenchido pelo
-NetSuite independentemente do caminho ser PO → Item Receipt → Bill ou PO → Bill direto),
-portanto a identificação primária por esse sublist continua funcionando sem alteração. O
-único ponto de atenção é o fallback via `createdfrom`: nesse cenário ele apontaria para o
-Item Receipt, não para a PO — por isso o fallback valida o tipo da transação antes de
-usá-la.
+PO. Esse cenário pode passar a ocorrer no futuro. O campo `orderdoc` do sublist `item`
+continua preenchido com a PO de origem independentemente do caminho ser PO → Item Receipt →
+Bill ou PO → Bill direto, portanto a identificação primária por esse campo continua
+funcionando sem alteração. O ponto de atenção permanece no fallback via `createdfrom`: nesse
+cenário ele apontaria para o Item Receipt, não para a PO — por isso o fallback valida o tipo
+da transação antes de usá-la.
 
 **Busca dos registros de origem:** para cada PO identificada, todos os registros de
 `customrecord_wr_installment_prevision` cujo campo `custrecord_wr_ip_transaction_ls` seja
